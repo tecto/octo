@@ -1,0 +1,30 @@
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nFirst injection marker in the session."}}
+{"type":"message","message":{"role":"assistant","content":"Acknowledged."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nSecond injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Continuing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nThird injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Processing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nFourth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Noted."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nFifth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Continuing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nSixth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Processing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nSeventh injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Acknowledged."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nEighth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Continuing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nNinth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Processing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nTenth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Noted."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nEleventh injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Processing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nTwelfth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Continuing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nThirteenth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Acknowledged."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nFourteenth injection marker."}}
+{"type":"message","message":{"role":"assistant","content":"Processing."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nFifteenth injection marker - this is excessive."}}
+{"type":"message","message":{"role":"assistant","content":"Warning: High injection marker count detected (15 markers)."}}

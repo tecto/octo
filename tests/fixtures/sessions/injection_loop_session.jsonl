@@ -1,0 +1,8 @@
+{"type":"message","message":{"role":"user","content":"Hello"}}
+{"type":"message","message":{"role":"assistant","content":"Hi there!"}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:1] Recovered Conversation Context\n\nThis is the first injection block with recovered context from a previous session."}}
+{"type":"message","message":{"role":"assistant","content":"I see you have context from a previous conversation."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:2] Recovered Conversation Context\n\nThis is a nested injection block.\n\n[INJECTION-DEPTH:1] Recovered Conversation Context\n\nThe original context is also included here, creating a nested structure."}}
+{"type":"message","message":{"role":"assistant","content":"I notice there are multiple nested context injections."}}
+{"type":"message","message":{"role":"user","content":"[INJECTION-DEPTH:3] Recovered Conversation Context\n\n[INJECTION-DEPTH:2] Recovered Conversation Context\n\n[INJECTION-DEPTH:1] Recovered Conversation Context\n\nTriply nested injection blocks indicate a feedback loop."}}
+{"type":"message","message":{"role":"assistant","content":"Warning: This session shows signs of an injection feedback loop with deeply nested context blocks."}}

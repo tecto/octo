@@ -1,0 +1,4 @@
+{"type":"message","message":{"role":"user","content":"Hello"}}
+{"type":"message","message":{"role":"assistant","content":"Hi there! How can I help you today?"}}
+{"type":"message","message":{"role":"user","content":"What is 2+2?"}}
+{"type":"message","message":{"role":"assistant","content":"2+2 equals 4."}}

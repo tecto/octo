@@ -1,0 +1,38 @@
+{
+  "version": "1.0.0",
+  "installedAt": "2026-01-15T10:30:00Z",
+  "openclaw": {
+    "home": "/home/user/.openclaw",
+    "version": "1.0.0"
+  },
+  "optimization": {
+    "promptCaching": {
+      "enabled": true
+    },
+    "modelTiering": {
+      "enabled": true
+    }
+  },
+  "monitoring": {
+    "sessionMonitoring": {
+      "enabled": true,
+      "warningThresholdPercent": 70,
+      "criticalThresholdPercent": 90
+    },
+    "bloatDetection": {
+      "enabled": true,
+      "autoIntervention": false
+    }
+  },
+  "costTracking": {
+    "enabled": true,
+    "dailyBudgetCents": null
+  },
+  "dashboard": {
+    "port": 6286
+  },
+  "onelist": {
+    "installed": false,
+    "method": null
+  }
+}

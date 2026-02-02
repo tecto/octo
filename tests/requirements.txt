@@ -1,0 +1,10 @@
+# OCTO Test Dependencies
+
+# Python test framework
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+
+# Code quality
+flake8>=6.0.0
+black>=23.0.0
