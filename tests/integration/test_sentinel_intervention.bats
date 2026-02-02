@@ -39,9 +39,15 @@ teardown() {
     cp "$FIXTURES_DIR/sessions/injection_loop_session.jsonl" \
        "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl"
 
-    # Check for nested blocks
-    nested_count=$(grep -c '\[INJECTION-DEPTH:[0-9]\+\].*\[INJECTION-DEPTH' \
-                   "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl" 2>/dev/null || echo "0")
+    # Check for lines with multiple INJECTION-DEPTH markers (nested blocks)
+    # Count lines where INJECTION-DEPTH appears more than once
+    nested_count=0
+    while IFS= read -r line; do
+        markers=$(echo "$line" | grep -o 'INJECTION-DEPTH' | wc -l | tr -d ' ')
+        if [ "$markers" -gt 1 ]; then
+            nested_count=$((nested_count + 1))
+        fi
+    done < "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl"
 
     [ "$nested_count" -gt 0 ]
 }

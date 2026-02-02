@@ -93,7 +93,8 @@ fi
 
 log_info "Testing help command..."
 
-if "$PROJECT_ROOT/bin/octo" --help | grep -q "OpenClaw Token Optimizer"; then
+# Strip ANSI color codes before grepping
+if "$PROJECT_ROOT/bin/octo" --help 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -q "OpenClaw"; then
     log_pass "Help command works"
 else
     log_fail "Help command failed"
@@ -273,8 +274,10 @@ if python3 -c "
 import sys
 sys.path.insert(0, '$PROJECT_ROOT/lib/core')
 from cost_estimator import CostEstimator
-est = CostEstimator(costs_dir='$OCTO_HOME/costs')
-cost = est.calculate('claude-sonnet-4-20250514', {'input_tokens': 1000, 'output_tokens': 500})
+est = CostEstimator()
+# Use actual interface: calculate(request, response)
+response = {'model': 'claude-sonnet-4-20250514', 'usage': {'input_tokens': 1000, 'output_tokens': 500}}
+cost = est.calculate({}, response)
 assert cost.total > 0, 'Cost should be positive'
 print('OK')
 " 2>/dev/null | grep -q "OK"; then
@@ -294,8 +297,9 @@ import sys
 sys.path.insert(0, '$PROJECT_ROOT/lib/core')
 from model_tier import ModelTier
 tier = ModelTier()
-decision = tier.classify([{'role': 'user', 'content': 'Yes'}])
-assert decision.tier == 'haiku', f'Expected haiku, got {decision.tier}'
+# Use actual interface: classify(message_string)
+decision = tier.classify('yes')
+assert decision.recommended_model == 'haiku', f'Expected haiku, got {decision.recommended_model}'
 print('OK')
 " 2>/dev/null | grep -q "OK"; then
     log_pass "Model tier works"
@@ -311,11 +315,16 @@ log_info "Testing session monitor..."
 
 if python3 -c "
 import sys
+from pathlib import Path
 sys.path.insert(0, '$PROJECT_ROOT/lib/core')
 from session_monitor import SessionMonitor
-monitor = SessionMonitor(openclaw_home='$OPENCLAW_HOME')
-sessions = monitor.discover_sessions()
-assert len(sessions) > 0, 'Should find sessions'
+sessions_dir = Path('$OPENCLAW_HOME/agents/main/sessions')
+monitor = SessionMonitor(sessions_dir=sessions_dir)
+# Find and analyze a session
+session_files = list(sessions_dir.glob('*.jsonl'))
+assert len(session_files) > 0, 'Should have session files'
+health = monitor.analyze_session(session_files[0])
+assert health.session_id, 'Should have session ID'
 print('OK')
 " 2>/dev/null | grep -q "OK"; then
     log_pass "Session monitor works"

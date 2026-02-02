@@ -156,7 +156,9 @@ teardown() {
 @test "passes when injection counts normal" {
     cp "$FIXTURES_DIR/sessions/healthy_session.jsonl" "$OPENCLAW_HOME/agents/main/sessions/test.jsonl"
 
-    count=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null || echo "0")
+    # grep -c returns 1 if no match, so we use || echo "0" and trim whitespace
+    count=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null) || count=0
+    count=$(echo "$count" | tr -d '[:space:]')
     [ "$count" -le 10 ]
 }
 

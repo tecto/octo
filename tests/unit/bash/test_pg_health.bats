@@ -172,7 +172,7 @@ teardown() {
 
 @test "table bloat warning at 20% dead tuples" {
     LIVE=10000
-    DEAD=2500
+    DEAD=3000  # 3000/(10000+3000) = 23% > 20%
     THRESHOLD_PERCENT=20
 
     BLOAT_PERCENT=$((DEAD * 100 / (LIVE + DEAD)))

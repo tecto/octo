@@ -102,7 +102,7 @@ fi
 log_info "Checking healthy session status..."
 
 # Check for injection markers
-markers=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/healthy.jsonl" 2>/dev/null || echo "0")
+markers=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/healthy.jsonl" 2>/dev/null) || markers=0
 
 if [ "$markers" -eq 0 ]; then
     log_pass "Healthy session has no injection markers"
@@ -137,8 +137,10 @@ fi
 
 log_info "Testing bloat detection..."
 
-# Check for nested injection markers
-nested=$(grep -c '\[INJECTION-DEPTH:[0-9]\+\].*\[INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl" 2>/dev/null || echo "0")
+# Check for nested injection markers (lines with multiple INJECTION-DEPTH)
+# Use awk to count lines where INJECTION-DEPTH appears more than once
+nested=$(awk '/INJECTION-DEPTH.*INJECTION-DEPTH/{count++} END{print count+0}' \
+    "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl" 2>/dev/null) || nested=0
 
 if [ "$nested" -gt 0 ]; then
     log_pass "Nested injection blocks detected ($nested)"
@@ -262,7 +264,7 @@ else
 fi
 
 # Session is clean
-reset_markers=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl" 2>/dev/null || echo "0")
+reset_markers=$(grep -c 'INJECTION-DEPTH' "$OPENCLAW_HOME/agents/main/sessions/bloated.jsonl" 2>/dev/null) || reset_markers=0
 
 if [ "$reset_markers" -eq 0 ]; then
     log_pass "Reset session has no injection markers"

@@ -121,7 +121,12 @@ teardown() {
     # Create a session with known content
     printf '%1000s' | tr ' ' 'x' > "$OPENCLAW_HOME/agents/main/sessions/test.jsonl"
 
-    size=$(du -sb "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null | cut -f1 || stat -f%z "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null)
+    # Cross-platform file size detection
+    if [[ "$(uname)" == "Darwin" ]]; then
+        size=$(stat -f%z "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null)
+    else
+        size=$(stat -c%s "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null || du -b "$OPENCLAW_HOME/agents/main/sessions/test.jsonl" 2>/dev/null | cut -f1)
+    fi
     [ -n "$size" ]
     [ "$size" -ge 1000 ]
 }
