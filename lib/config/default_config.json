@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+
+  "optimization": {
+    "promptCaching": {
+      "enabled": true,
+      "cacheSystemPrompt": true,
+      "cacheTools": true,
+      "cacheHistoryOlderThan": 5
+    },
+    "modelTiering": {
+      "enabled": true,
+      "defaultModel": "sonnet",
+      "haikuPatterns": [
+        "^(what|which|where|when|who|how many)\\b",
+        "\\b(list|show|display|get)\\s+(files?|dirs?|folders?)",
+        "^(yes|no|confirm|cancel|ok|done)\\b",
+        "\\buse\\s+(the\\s+)?(grep|glob|read|bash)\\s+tool"
+      ],
+      "opusPatterns": [
+        "\\b(architect|design|plan)\\b.*\\b(system|service|infrastructure)",
+        "\\b(trade-?off|compare|evaluate)\\b.*\\b(approach|solution|option)",
+        "\\b(security|vulnerability|attack)\\b.*\\b(audit|review|assess)"
+      ]
+    }
+  },
+
+  "monitoring": {
+    "sessionMonitor": {
+      "enabled": true,
+      "warningThreshold": 0.70,
+      "criticalThreshold": 0.90,
+      "growthRateWarnTokensPerMin": 5000
+    },
+    "bloatSentinel": {
+      "enabled": true,
+      "autoIntervene": true,
+      "checkIntervalSeconds": 10,
+      "layer1NestedBlocks": 1,
+      "layer2GrowthKB": 1000,
+      "layer2GrowthWindowSeconds": 60,
+      "layer2RequireMarkers": true,
+      "layer3MaxSizeKB": 10240,
+      "layer3MinMarkers": 2,
+      "layer4TotalMarkers": 10
+    },
+    "watchdog": {
+      "enabled": true,
+      "intervalSeconds": 60,
+      "maxSessionSizeMB": 10,
+      "overflowErrorThreshold": 3
+    }
+  },
+
+  "costTracking": {
+    "enabled": true,
+    "dailyBudgetCents": null,
+    "weeklyBudgetCents": null,
+    "monthlyBudgetCents": null,
+    "alertOnBudgetExceeded": true,
+    "retentionDays": 90
+  },
+
+  "dashboard": {
+    "enabled": true,
+    "port": 6286,
+    "host": "localhost"
+  },
+
+  "onelist": {
+    "installed": false,
+    "method": null,
+    "host": "localhost",
+    "port": 4000,
+    "database": "onelist_dev"
+  },
+
+  "logging": {
+    "level": "info",
+    "maxFileSizeMB": 10,
+    "maxFiles": 5
+  }
+}

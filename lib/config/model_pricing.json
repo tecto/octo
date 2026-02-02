@@ -1,0 +1,40 @@
+{
+  "version": "2026-02",
+  "models": {
+    "claude-opus-4-5-20251101": {
+      "display_name": "Claude Opus 4.5",
+      "short_name": "opus",
+      "input_per_million": 15.00,
+      "output_per_million": 75.00,
+      "cache_read_per_million": 1.50,
+      "cache_write_per_million": 18.75,
+      "context_window": 200000
+    },
+    "claude-sonnet-4-20250514": {
+      "display_name": "Claude Sonnet 4",
+      "short_name": "sonnet",
+      "input_per_million": 3.00,
+      "output_per_million": 15.00,
+      "cache_read_per_million": 0.30,
+      "cache_write_per_million": 3.75,
+      "context_window": 200000
+    },
+    "claude-haiku-3-5-20241022": {
+      "display_name": "Claude Haiku 3.5",
+      "short_name": "haiku",
+      "input_per_million": 0.80,
+      "output_per_million": 4.00,
+      "cache_read_per_million": 0.08,
+      "cache_write_per_million": 1.00,
+      "context_window": 200000
+    }
+  },
+  "aliases": {
+    "opus": "claude-opus-4-5-20251101",
+    "sonnet": "claude-sonnet-4-20250514",
+    "haiku": "claude-haiku-3-5-20241022",
+    "claude-opus-4-5": "claude-opus-4-5-20251101",
+    "claude-sonnet-4": "claude-sonnet-4-20250514",
+    "claude-haiku-3-5": "claude-haiku-3-5-20241022"
+  }
+}

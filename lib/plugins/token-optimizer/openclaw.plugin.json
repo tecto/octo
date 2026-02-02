@@ -1,0 +1,46 @@
+{
+  "name": "token-optimizer",
+  "version": "1.0.0",
+  "description": "OCTO Token Optimizer - Reduce OpenClaw API costs by 60-95%",
+  "author": "Trinsik Labs",
+  "license": "MIT",
+  "homepage": "https://github.com/trinsiklabs/openclaw-token-optimizer",
+
+  "main": "index.ts",
+
+  "hooks": {
+    "before_request": "onBeforeRequest",
+    "after_response": "onAfterResponse"
+  },
+
+  "settings": {
+    "promptCaching": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable Anthropic prompt caching headers"
+    },
+    "modelTiering": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable automatic model tier selection"
+    },
+    "costTracking": {
+      "type": "boolean",
+      "default": true,
+      "description": "Track API costs per request"
+    }
+  },
+
+  "requires": {
+    "openclaw": ">=1.0.0"
+  },
+
+  "keywords": [
+    "openclaw",
+    "optimization",
+    "cost-reduction",
+    "token-optimization",
+    "caching",
+    "model-tiering"
+  ]
+}

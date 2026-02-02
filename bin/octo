@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+#
+# OCTO - OpenClaw Token Optimizer
+# Main CLI entry point
+#
+# Usage: octo <command> [options]
+#
+
+set -euo pipefail
+
+VERSION="1.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
+OCTO_HOME="${OCTO_HOME:-$HOME/.octo}"
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+OCTO_PORT="${OCTO_PORT:-6286}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Ensure config directory exists
+mkdir -p "$OCTO_HOME"/{logs,costs,metrics}
+
+show_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+   ____   _____ _______ ____
+  / __ \ / ____|__   __/ __ \
+ | |  | | |       | | | |  | |
+ | |  | | |       | | | |  | |
+ | |__| | |____   | | | |__| |
+  \____/ \_____|  |_|  \____/
+
+  OpenClaw Token Optimizer
+EOF
+    echo -e "${NC}"
+}
+
+show_help() {
+    show_banner
+    echo -e "${BOLD}Version:${NC} $VERSION"
+    echo ""
+    echo -e "${BOLD}Usage:${NC} octo <command> [options]"
+    echo ""
+    echo -e "${BOLD}Commands:${NC}"
+    echo "  install       Interactive setup wizard"
+    echo "  status        Show optimization status and savings"
+    echo "  analyze       Analyze token usage patterns"
+    echo "  doctor        Health check and diagnostics"
+    echo ""
+    echo -e "${BOLD}Monitoring:${NC}"
+    echo "  sentinel      Manage bloat detection service"
+    echo "  watchdog      Manage health monitoring service"
+    echo "  surgery       Manual recovery from bloated sessions"
+    echo ""
+    echo -e "${BOLD}Integrations:${NC}"
+    echo "  onelist       Install Onelist local inference"
+    echo "  pg-health     PostgreSQL maintenance (requires Onelist)"
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo "  -h, --help    Show this help message"
+    echo "  -v, --version Show version"
+    echo ""
+    echo -e "${BOLD}Dashboard:${NC}"
+    echo "  http://localhost:${OCTO_PORT}"
+    echo ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo "  octo install              # Run setup wizard"
+    echo "  octo status               # Check current status"
+    echo "  octo sentinel start       # Start bloat detection"
+    echo "  octo doctor               # Run health checks"
+    echo ""
+    echo -e "${BOLD}Documentation:${NC}"
+    echo "  https://github.com/trinsiklabs/openclaw-token-optimizer"
+}
+
+show_version() {
+    echo "octo version $VERSION"
+}
+
+check_openclaw() {
+    if [ ! -d "$OPENCLAW_HOME" ]; then
+        echo -e "${RED}Error:${NC} OpenClaw not found at $OPENCLAW_HOME"
+        echo "Please install OpenClaw first or set OPENCLAW_HOME"
+        exit 1
+    fi
+}
+
+# Command routing
+case "${1:-}" in
+    install)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/install.sh" "$@"
+        ;;
+    status)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/status.sh" "$@"
+        ;;
+    analyze)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/analyze.sh" "$@"
+        ;;
+    doctor)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/doctor.sh" "$@"
+        ;;
+    sentinel)
+        check_openclaw
+        shift
+        source "$LIB_DIR/watchdog/bloat-sentinel.sh" "$@"
+        ;;
+    watchdog)
+        check_openclaw
+        shift
+        source "$LIB_DIR/watchdog/openclaw-watchdog.sh" "$@"
+        ;;
+    surgery)
+        check_openclaw
+        shift
+        source "$LIB_DIR/watchdog/bump-openclaw-bot.sh" "$@"
+        ;;
+    onelist)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/onelist.sh" "$@"
+        ;;
+    pg-health)
+        shift
+        source "$LIB_DIR/integrations/onelist/pg-health-check.sh" "$@"
+        ;;
+    dashboard)
+        shift
+        python3 "$LIB_DIR/core/dashboard_server.py" "$@"
+        ;;
+    -h|--help|help)
+        show_help
+        ;;
+    -v|--version|version)
+        show_version
+        ;;
+    "")
+        show_help
+        ;;
+    *)
+        echo -e "${RED}Error:${NC} Unknown command '$1'"
+        echo "Run 'octo --help' for usage"
+        exit 1
+        ;;
+esac
