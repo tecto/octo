@@ -9,7 +9,21 @@
 set -euo pipefail
 
 VERSION="1.0.0"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve symlinks to find the real script location
+resolve_symlink() {
+    local path="$1"
+    while [ -L "$path" ]; do
+        local dir="$(cd "$(dirname "$path")" && pwd)"
+        path="$(readlink "$path")"
+        # Handle relative symlinks
+        [[ "$path" != /* ]] && path="$dir/$path"
+    done
+    echo "$path"
+}
+
+REAL_SCRIPT="$(resolve_symlink "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
 OCTO_HOME="${OCTO_HOME:-$HOME/.octo}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
