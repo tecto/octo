@@ -271,10 +271,19 @@ else
 fi
 echo ""
 
+# Check if Onelist is already installed
+ONELIST_INSTALLED="false"
+if [ -f "$HOME/.octo/config.json" ] && command -v jq &>/dev/null; then
+    ONELIST_INSTALLED=$(jq -r '.onelist.installed // false' "$HOME/.octo/config.json" 2>/dev/null || echo "false")
+fi
+
 # Auto-install Onelist if requested and resources available
 OCTO_INSTALL_ONELIST="${OCTO_INSTALL_ONELIST:-false}"
 
-if [ "$RAM_OK" = "yes" ] && [ "$CPU_OK" = "yes" ] && [ "$DISK_OK" = "yes" ]; then
+if [ "$ONELIST_INSTALLED" = "true" ]; then
+    log "Onelist already installed - skipping"
+    echo "  Run 'octo onelist --status' to check status"
+elif [ "$RAM_OK" = "yes" ] && [ "$CPU_OK" = "yes" ] && [ "$DISK_OK" = "yes" ]; then
     if [ "$OCTO_INSTALL_ONELIST" = "true" ]; then
         log "Installing Onelist for maximum savings..."
         "$BIN_DIR/octo" onelist --method=docker 2>/dev/null || warn "Onelist installation requires Docker. Run 'octo onelist' manually."

@@ -433,11 +433,46 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Check if already installed
+check_already_installed() {
+    if [ -f "$OCTO_HOME/config.json" ]; then
+        local installed=$(jq -r '.onelist.installed // false' "$OCTO_HOME/config.json" 2>/dev/null)
+        if [ "$installed" = "true" ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Main installation flow
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║${NC}                ${BOLD}Onelist Installation${NC}                             ${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════╝${NC}"
+
+# Check if already installed
+if check_already_installed; then
+    echo ""
+    log_ok "Onelist is already installed"
+    show_status
+
+    # In interactive mode, ask if they want to reinstall
+    if [ -t 0 ]; then
+        echo ""
+        echo -n "  Reinstall Onelist? [y/N] "
+        read -r reply
+        if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "  Run 'octo onelist --status' to check status"
+            exit 0
+        fi
+        echo ""
+        log_warn "Proceeding with reinstallation..."
+    else
+        # Non-interactive mode - just exit successfully
+        exit 0
+    fi
+fi
 
 # Check requirements
 check_requirements || exit 1
