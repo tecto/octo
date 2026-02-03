@@ -94,7 +94,7 @@ show_help() {
     echo "  octo doctor               # Run health checks"
     echo ""
     echo -e "${BOLD}Documentation:${NC}"
-    echo "  https://github.com/trinsiklabs/openclaw-token-optimizer"
+    echo "  https://github.com/trinsiklabs/octo"
 }
 
 show_version() {
