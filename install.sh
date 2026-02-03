@@ -75,9 +75,16 @@ if [ ! -d "$OPENCLAW_HOME" ]; then
     echo -e "${YELLOW}Warning:${NC} OpenClaw not found at $OPENCLAW_HOME"
     echo "OCTO will be installed but cannot function without OpenClaw."
     echo ""
-    read -p "Continue anyway? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [ -t 0 ]; then
+        # Interactive mode - ask user
+        read -p "Continue anyway? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        # Non-interactive mode - abort
+        echo -e "${RED}Error:${NC} OpenClaw required. Set OPENCLAW_HOME or install OpenClaw first."
         exit 1
     fi
 else
@@ -168,12 +175,16 @@ echo ""
 echo -e "  ${BOLD}Dashboard:${NC} http://localhost:6286 (after setup)"
 echo ""
 
-# Offer to run install wizard
-echo -n "Run setup wizard now? [Y/n] "
-read -r REPLY
-REPLY="${REPLY:-Y}"
+# Offer to run install wizard (only in interactive mode)
+if [ -t 0 ]; then
+    echo -n "Run setup wizard now? [Y/n] "
+    read -r REPLY
+    REPLY="${REPLY:-Y}"
 
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo ""
-    exec "$BIN_DIR/octo" install
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        exec "$BIN_DIR/octo" install
+    fi
+else
+    echo "Run 'octo install' to configure optimizations."
 fi
