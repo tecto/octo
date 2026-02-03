@@ -50,6 +50,9 @@ show_help() {
     echo ""
     echo -e "${BOLD}Commands:${NC}"
     echo "  install       Interactive setup wizard"
+    echo "  uninstall     Remove OCTO installation"
+    echo "  reinstall     Clean reinstall (removes config)"
+    echo "  upgrade       Upgrade while preserving config"
     echo "  status        Show optimization status and savings"
     echo "  analyze       Analyze token usage patterns"
     echo "  doctor        Health check and diagnostics"
@@ -98,6 +101,19 @@ case "${1:-}" in
         check_openclaw
         shift
         source "$LIB_DIR/cli/install.sh" "$@"
+        ;;
+    uninstall)
+        shift
+        source "$LIB_DIR/cli/uninstall.sh" "$@"
+        ;;
+    reinstall)
+        check_openclaw
+        shift
+        source "$LIB_DIR/cli/reinstall.sh" "$@"
+        ;;
+    upgrade)
+        shift
+        source "$LIB_DIR/cli/upgrade.sh" "$@"
         ;;
     status)
         check_openclaw

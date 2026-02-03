@@ -12,6 +12,32 @@ OCTO_HOME="${OCTO_HOME:-$HOME/.octo}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 OCTO_PORT="${OCTO_PORT:-6286}"
 
+# Command line flags
+CHECK_ONLY=false
+FORCE=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --check-only)
+            CHECK_ONLY=true
+            shift
+            ;;
+        --force)
+            FORCE=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Check if OCTO is already installed
+is_octo_installed() {
+    [ -f "$OCTO_HOME/config.json" ]
+}
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -133,6 +159,35 @@ EOF
 
 # Main installation flow
 main() {
+    # Check for existing installation FIRST (before banner)
+    if is_octo_installed && [ "$FORCE" != true ]; then
+        if [ "$CHECK_ONLY" = true ]; then
+            echo "OCTO is already installed at $OCTO_HOME"
+            echo ""
+            echo "Options:"
+            echo "  octo uninstall    - Remove OCTO completely"
+            echo "  octo reinstall    - Clean reinstall (removes config)"
+            echo "  octo upgrade      - Upgrade while preserving config"
+            exit 1
+        fi
+
+        echo -e "${RED}OCTO is already installed${NC} at $OCTO_HOME"
+        echo ""
+        echo "Options:"
+        echo "  octo uninstall    - Remove OCTO completely"
+        echo "  octo reinstall    - Clean reinstall (removes config)"
+        echo "  octo upgrade      - Upgrade while preserving config"
+        echo ""
+        echo "Or use 'octo install --force' to overwrite existing installation."
+        exit 1
+    fi
+
+    # Check-only mode exits cleanly if not installed
+    if [ "$CHECK_ONLY" = true ]; then
+        echo "OCTO is not installed. Ready for fresh installation."
+        exit 0
+    fi
+
     show_banner
 
     echo -e "${BOLD}This wizard will configure OCTO to optimize your OpenClaw costs.${NC}"
@@ -174,16 +229,6 @@ main() {
         log_info "Existing plugins: $EXISTING_PLUGINS"
     else
         log_info "No plugins currently configured"
-    fi
-
-    # Check if OCTO already installed
-    if [ -f "$OCTO_HOME/config.json" ]; then
-        log_warn "OCTO already configured"
-        if ! prompt_yn "Reconfigure OCTO?" "N"; then
-            echo ""
-            echo "Installation cancelled. Run 'octo status' to see current configuration."
-            exit 0
-        fi
     fi
 
     # Step 3: Prompt Caching

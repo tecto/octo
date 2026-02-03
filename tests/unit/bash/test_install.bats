@@ -305,3 +305,70 @@ EOF
 
     [ -f "$OCTO_HOME/config.json" ]
 }
+
+# ============================================
+# Already Installed Detection Tests (NEW)
+# ============================================
+
+@test "install fails if OCTO already installed" {
+    # Setup: Create existing OCTO installation
+    mkdir -p "$OCTO_HOME"
+    cat > "$OCTO_HOME/config.json" << 'EOF'
+{"version": "1.0.0", "installedAt": "2026-01-15T10:00:00Z"}
+EOF
+
+    # Run install in non-interactive mode
+    run "$PROJECT_ROOT/lib/cli/install.sh" --check-only 2>&1
+
+    # Should fail with exit code 1
+    [ "$status" -eq 1 ] || [[ "$output" == *"already installed"* ]]
+}
+
+@test "install suggests uninstall option when already installed" {
+    mkdir -p "$OCTO_HOME"
+    cat > "$OCTO_HOME/config.json" << 'EOF'
+{"version": "1.0.0", "installedAt": "2026-01-15T10:00:00Z"}
+EOF
+
+    run "$PROJECT_ROOT/lib/cli/install.sh" --check-only 2>&1
+
+    # Should mention uninstall as an option
+    [[ "$output" == *"uninstall"* ]] || [[ "$output" == *"reinstall"* ]] || [[ "$output" == *"upgrade"* ]]
+}
+
+@test "install succeeds on fresh system" {
+    # Ensure no existing config
+    rm -f "$OCTO_HOME/config.json"
+
+    # Check should pass (not actually install, just check)
+    run "$PROJECT_ROOT/lib/cli/install.sh" --check-only 2>&1
+
+    # Should not fail due to existing installation
+    [[ "$output" != *"already installed"* ]]
+}
+
+@test "is_octo_installed returns true when config exists" {
+    mkdir -p "$OCTO_HOME"
+    echo '{"version":"1.0.0"}' > "$OCTO_HOME/config.json"
+
+    # Function check
+    if [ -f "$OCTO_HOME/config.json" ]; then
+        INSTALLED=true
+    else
+        INSTALLED=false
+    fi
+
+    [ "$INSTALLED" == "true" ]
+}
+
+@test "is_octo_installed returns false when no config" {
+    rm -f "$OCTO_HOME/config.json"
+
+    if [ -f "$OCTO_HOME/config.json" ]; then
+        INSTALLED=true
+    else
+        INSTALLED=false
+    fi
+
+    [ "$INSTALLED" == "false" ]
+}

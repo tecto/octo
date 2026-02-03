@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 #
 # OCTO Onelist Integration
-# Install and configure Onelist local inference
+# Detects running Onelist or offers to install onelist-local
+#
+# Detection layers (in order):
+# 1. Process detection (beam.smp/elixir)
+# 2. Docker container detection
+# 3. Config/installation file detection
+# 4. Systemd service check
+#
+# OCTO does NOT:
+# - Install Docker containers
+# - Set up PostgreSQL
+# - Create databases
+# - Create onelist-memory plugin (that's in onelist-local)
 #
 
 set -euo pipefail
@@ -10,6 +22,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$(dirname "$SCRIPT_DIR")"
 OCTO_HOME="${OCTO_HOME:-$HOME/.octo}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+
+# Default configuration
+ONELIST_PORT="${ONELIST_PORT:-4000}"
+ONELIST_URL="${ONELIST_URL:-http://localhost:$ONELIST_PORT}"
+ONELIST_LOCAL_INSTALLER="https://raw.githubusercontent.com/trinsiklabs/onelist-local/main/install.sh"
+
+# Detection results
+DETECTED_METHOD=""
+DETECTED_PORT=""
+DETECTED_INFO=""
 
 # Colors
 RED='\033[0;31m'
@@ -21,405 +43,568 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# Default configuration
-INSTALL_METHOD=""
-ONELIST_PORT=4000
-PG_PORT=5432
-ONELIST_DB="onelist_dev"
-
 show_help() {
     echo "Usage: octo onelist [options]"
     echo ""
-    echo "Install and configure Onelist local inference for maximum savings."
+    echo "Detect and connect to Onelist for maximum savings."
     echo ""
     echo "Options:"
-    echo "  --method=METHOD    Installation method: docker or native"
-    echo "  --port=PORT        Onelist port (default: 4000)"
-    echo "  --db=NAME          Database name (default: onelist_dev)"
-    echo "  --check            Check if system meets requirements"
-    echo "  --status           Show Onelist status"
-    echo "  -h, --help         Show this help"
+    echo "  --url=URL        Onelist URL (default: http://localhost:4000)"
+    echo "  --port=PORT      Onelist port (default: 4000)"
+    echo "  --status         Show connection status"
+    echo "  --disconnect     Disconnect from Onelist"
+    echo "  --detect         Run detection and show results"
+    echo "  -h, --help       Show this help"
+    echo ""
+    echo "Detection methods (checked in order):"
+    echo "  1. Process detection (beam.smp/elixir processes)"
+    echo "  2. Docker container detection"
+    echo "  3. Config file detection (~/.onelist/)"
+    echo "  4. Systemd service check"
     echo ""
     echo "Examples:"
-    echo "  octo onelist                    # Interactive install"
-    echo "  octo onelist --method=docker    # Docker installation"
-    echo "  octo onelist --method=native    # Native installation"
-    echo "  octo onelist --status           # Check status"
-}
-
-log_step() {
-    echo -e "\n${CYAN}[•]${NC} ${BOLD}$1${NC}"
+    echo "  octo onelist                          # Detect or install"
+    echo "  octo onelist --url=http://192.168.1.100:4000"
+    echo "  octo onelist --status                 # Check connection"
+    echo "  octo onelist --detect                 # Show detection results"
 }
 
 log_ok() {
-    echo -e "    ${GREEN}✓${NC} $1"
+    echo -e "  ${GREEN}✓${NC} $1"
 }
 
 log_info() {
-    echo -e "    ${BLUE}•${NC} $1"
+    echo -e "  ${BLUE}•${NC} $1"
 }
 
 log_warn() {
-    echo -e "    ${YELLOW}⚠${NC} $1"
+    echo -e "  ${YELLOW}⚠${NC} $1"
 }
 
 log_error() {
-    echo -e "    ${RED}✗${NC} $1"
+    echo -e "  ${RED}✗${NC} $1"
 }
 
-check_requirements() {
-    log_step "Checking system requirements..."
+# Check if Onelist is responding at a given URL
+check_onelist_health() {
+    local url="${1:-$ONELIST_URL}"
+    local health_url="${url}/api/health"
 
-    local meets_requirements=true
-
-    # RAM check
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        RAM_GB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
-    else
-        RAM_GB=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+    if curl -s --connect-timeout 3 --max-time 5 "$health_url" >/dev/null 2>&1; then
+        return 0
     fi
 
-    if [ "$RAM_GB" -ge 4 ]; then
-        log_ok "RAM: ${RAM_GB}GB (4GB required)"
-    else
-        log_error "RAM: ${RAM_GB}GB (4GB required)"
-        meets_requirements=false
+    # Try alternate health endpoint
+    health_url="${url}/health"
+    if curl -s --connect-timeout 3 --max-time 5 "$health_url" >/dev/null 2>&1; then
+        return 0
     fi
 
-    # CPU check
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        CPU_CORES=$(sysctl -n hw.ncpu)
-    else
-        CPU_CORES=$(nproc)
+    return 1
+}
+
+# Layer 1: Process detection
+detect_process() {
+    local pid=""
+    local port=""
+
+    # Check for BEAM process with onelist in path/args
+    pid=$(pgrep -f "beam.smp.*onelist" 2>/dev/null | head -1) || true
+
+    if [ -z "$pid" ]; then
+        # Try broader Elixir/Phoenix detection
+        pid=$(pgrep -f "beam.smp.*phx" 2>/dev/null | head -1) || true
     fi
 
-    if [ "$CPU_CORES" -ge 2 ]; then
-        log_ok "CPU: ${CPU_CORES} cores (2 required)"
-    else
-        log_error "CPU: ${CPU_CORES} cores (2 required)"
-        meets_requirements=false
+    if [ -z "$pid" ]; then
+        # Check for elixir process
+        pid=$(pgrep -f "elixir.*onelist" 2>/dev/null | head -1) || true
     fi
 
-    # Disk check
-    DISK_GB=$(df -BG "$HOME" 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")
-    if [ "$DISK_GB" -ge 10 ]; then
-        log_ok "Disk: ${DISK_GB}GB available (10GB required)"
-    else
-        log_error "Disk: ${DISK_GB}GB available (10GB required)"
-        meets_requirements=false
-    fi
-
-    # Check for Docker (if docker method)
-    if [ "$INSTALL_METHOD" = "docker" ] || [ -z "$INSTALL_METHOD" ]; then
-        if command -v docker &>/dev/null; then
-            DOCKER_VERSION=$(docker --version | cut -d' ' -f3 | tr -d ',')
-            log_ok "Docker: $DOCKER_VERSION"
-
-            if docker info &>/dev/null; then
-                log_ok "Docker daemon running"
-            else
-                log_warn "Docker daemon not running"
-            fi
-        else
-            log_info "Docker: not installed"
+    if [ -n "$pid" ]; then
+        # Try to find what port it's listening on
+        if command -v lsof &>/dev/null; then
+            port=$(lsof -Pan -p "$pid" -i TCP -sTCP:LISTEN 2>/dev/null | grep -oE ':\d+' | head -1 | tr -d ':') || true
+        elif command -v ss &>/dev/null; then
+            port=$(ss -tlnp 2>/dev/null | grep "pid=$pid" | grep -oE ':\d+' | head -1 | tr -d ':') || true
         fi
+
+        DETECTED_METHOD="process"
+        DETECTED_PORT="${port:-unknown}"
+        DETECTED_INFO="PID: $pid"
+        return 0
     fi
 
-    # Check for PostgreSQL (if native method)
-    if [ "$INSTALL_METHOD" = "native" ] || [ -z "$INSTALL_METHOD" ]; then
-        if command -v psql &>/dev/null; then
-            PG_VERSION=$(psql --version | cut -d' ' -f3)
-            log_ok "PostgreSQL: $PG_VERSION"
+    return 1
+}
 
-            if pg_isready -q 2>/dev/null; then
-                log_ok "PostgreSQL running"
-            else
-                log_info "PostgreSQL not running"
-            fi
-        else
-            log_info "PostgreSQL: not installed"
-        fi
-    fi
-
-    if [ "$meets_requirements" = false ]; then
-        echo ""
-        log_error "System does not meet minimum requirements"
+# Layer 2: Docker container detection
+detect_docker() {
+    if ! command -v docker &>/dev/null; then
         return 1
     fi
 
-    return 0
+    if ! docker info &>/dev/null 2>&1; then
+        return 1
+    fi
+
+    local container_info=""
+    local port=""
+
+    # Check for container named onelist
+    container_info=$(docker ps --filter "name=onelist" --format '{{.Names}}:{{.Ports}}' 2>/dev/null | head -1) || true
+
+    if [ -z "$container_info" ]; then
+        # Check for trinsiklabs/onelist image
+        container_info=$(docker ps --filter "ancestor=trinsiklabs/onelist" --format '{{.Names}}:{{.Ports}}' 2>/dev/null | head -1) || true
+    fi
+
+    if [ -z "$container_info" ]; then
+        # Check for any container with onelist in the image name
+        container_info=$(docker ps --format '{{.Names}}:{{.Image}}:{{.Ports}}' 2>/dev/null | grep -i onelist | head -1) || true
+    fi
+
+    if [ -n "$container_info" ]; then
+        # Extract port mapping (e.g., "0.0.0.0:4000->4000/tcp" -> "4000")
+        port=$(echo "$container_info" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2) || true
+        if [ -z "$port" ]; then
+            port=$(echo "$container_info" | grep -oE ':[0-9]+->' | head -1 | tr -d ':' | tr -d '->' ) || true
+        fi
+
+        DETECTED_METHOD="docker"
+        DETECTED_PORT="${port:-unknown}"
+        DETECTED_INFO="Container: $(echo "$container_info" | cut -d: -f1)"
+        return 0
+    fi
+
+    return 1
 }
 
+# Layer 3: Config/installation file detection
+detect_config() {
+    local onelist_home="${ONELIST_HOME:-$HOME/.onelist}"
+
+    # Check for onelist config file
+    if [ -f "$onelist_home/config.json" ]; then
+        DETECTED_METHOD="config"
+        DETECTED_INFO="Found: $onelist_home/config.json"
+
+        # Try to extract port from config
+        if command -v jq &>/dev/null; then
+            DETECTED_PORT=$(jq -r '.port // .server.port // "unknown"' "$onelist_home/config.json" 2>/dev/null) || true
+        fi
+        [ "$DETECTED_PORT" = "null" ] && DETECTED_PORT="unknown"
+
+        return 0
+    fi
+
+    # Check for docker-compose.yml
+    if [ -f "$onelist_home/docker-compose.yml" ]; then
+        DETECTED_METHOD="config"
+        DETECTED_INFO="Found: $onelist_home/docker-compose.yml"
+
+        # Try to extract port from docker-compose
+        DETECTED_PORT=$(grep -oE '\d+:4000' "$onelist_home/docker-compose.yml" 2>/dev/null | head -1 | cut -d: -f1) || true
+        [ -z "$DETECTED_PORT" ] && DETECTED_PORT="unknown"
+
+        return 0
+    fi
+
+    # Check /opt/onelist
+    if [ -d "/opt/onelist" ]; then
+        DETECTED_METHOD="config"
+        DETECTED_INFO="Found: /opt/onelist/"
+        DETECTED_PORT="unknown"
+        return 0
+    fi
+
+    return 1
+}
+
+# Layer 4: Systemd service check
+detect_systemd() {
+    if ! command -v systemctl &>/dev/null; then
+        return 1
+    fi
+
+    local status=""
+
+    # Check for onelist service
+    status=$(systemctl is-active onelist 2>/dev/null) || true
+
+    if [ "$status" = "active" ]; then
+        DETECTED_METHOD="systemd"
+        DETECTED_INFO="Service: onelist.service (active)"
+
+        # Try to get port from service file or environment
+        local service_file="/etc/systemd/system/onelist.service"
+        if [ -f "$service_file" ]; then
+            DETECTED_PORT=$(grep -oE 'PORT=[0-9]+' "$service_file" 2>/dev/null | cut -d= -f2) || true
+        fi
+        [ -z "$DETECTED_PORT" ] && DETECTED_PORT="unknown"
+
+        return 0
+    fi
+
+    # Check if service exists but is inactive
+    if systemctl list-unit-files onelist.service &>/dev/null 2>&1; then
+        status=$(systemctl is-enabled onelist 2>/dev/null) || true
+        if [ "$status" = "enabled" ] || [ "$status" = "disabled" ]; then
+            DETECTED_METHOD="systemd"
+            DETECTED_INFO="Service: onelist.service (installed but not active)"
+            DETECTED_PORT="unknown"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Run all detection layers
+run_detection() {
+    DETECTED_METHOD=""
+    DETECTED_PORT=""
+    DETECTED_INFO=""
+
+    # Layer 1: Process
+    if detect_process; then
+        return 0
+    fi
+
+    # Layer 2: Docker
+    if detect_docker; then
+        return 0
+    fi
+
+    # Layer 3: Config files
+    if detect_config; then
+        return 0
+    fi
+
+    # Layer 4: Systemd
+    if detect_systemd; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Show detection results
+show_detection() {
+    echo ""
+    echo -e "${BOLD}Onelist Detection Results${NC}"
+    echo "────────────────────────────────────────────────────────────────────"
+
+    echo ""
+    echo "Running detection layers..."
+    echo ""
+
+    # Layer 1
+    echo -n "  [1] Process detection:    "
+    if detect_process; then
+        echo -e "${GREEN}FOUND${NC} ($DETECTED_INFO, port: $DETECTED_PORT)"
+    else
+        echo -e "${DIM}not found${NC}"
+    fi
+
+    # Layer 2
+    DETECTED_METHOD=""
+    echo -n "  [2] Docker container:     "
+    if detect_docker; then
+        echo -e "${GREEN}FOUND${NC} ($DETECTED_INFO, port: $DETECTED_PORT)"
+    else
+        echo -e "${DIM}not found${NC}"
+    fi
+
+    # Layer 3
+    DETECTED_METHOD=""
+    echo -n "  [3] Config files:         "
+    if detect_config; then
+        echo -e "${GREEN}FOUND${NC} ($DETECTED_INFO)"
+    else
+        echo -e "${DIM}not found${NC}"
+    fi
+
+    # Layer 4
+    DETECTED_METHOD=""
+    echo -n "  [4] Systemd service:      "
+    if detect_systemd; then
+        echo -e "${GREEN}FOUND${NC} ($DETECTED_INFO)"
+    else
+        echo -e "${DIM}not found${NC}"
+    fi
+
+    echo ""
+}
+
+# Configure OCTO to connect to Onelist
+configure_connection() {
+    local url="$1"
+
+    if [ -f "$OCTO_HOME/config.json" ] && command -v jq &>/dev/null; then
+        local tmp=$(mktemp)
+        jq --arg url "$url" '.onelist.url = $url | .onelist.connected = true' "$OCTO_HOME/config.json" > "$tmp"
+        mv "$tmp" "$OCTO_HOME/config.json"
+        log_ok "Configured OCTO to connect to $url"
+    else
+        log_warn "Could not update OCTO config (jq not available or config missing)"
+    fi
+}
+
+# Remove Onelist connection from config
+disconnect_onelist() {
+    if [ -f "$OCTO_HOME/config.json" ] && command -v jq &>/dev/null; then
+        local tmp=$(mktemp)
+        jq '.onelist.url = null | .onelist.connected = false' "$OCTO_HOME/config.json" > "$tmp"
+        mv "$tmp" "$OCTO_HOME/config.json"
+        log_ok "Disconnected from Onelist"
+    else
+        log_warn "Could not update OCTO config"
+    fi
+}
+
+# Show current status
 show_status() {
     echo ""
-    echo -e "${BOLD}Onelist Status${NC}"
+    echo -e "${BOLD}Onelist Connection Status${NC}"
     echo "────────────────────────────────────────────────────────────────────"
 
     # Check config
-    if [ -f "$OCTO_HOME/config.json" ]; then
-        INSTALLED=$(jq -r '.onelist.installed // false' "$OCTO_HOME/config.json")
-        METHOD=$(jq -r '.onelist.method // "unknown"' "$OCTO_HOME/config.json")
+    if [ -f "$OCTO_HOME/config.json" ] && command -v jq &>/dev/null; then
+        local url=$(jq -r '.onelist.url // "not configured"' "$OCTO_HOME/config.json")
+        local connected=$(jq -r '.onelist.connected // false' "$OCTO_HOME/config.json")
 
-        if [ "$INSTALLED" = "true" ]; then
-            echo -e "  Installation:           ${GREEN}installed${NC} ($METHOD)"
-        else
-            echo -e "  Installation:           ${DIM}not installed${NC}"
-            return
+        echo -e "  Configured URL:         ${url}"
+        echo -e "  Connected:              ${connected}"
+
+        if [ "$connected" = "true" ] && [ "$url" != "null" ] && [ "$url" != "not configured" ]; then
+            echo ""
+            echo "  Checking connection..."
+            if check_onelist_health "$url"; then
+                echo -e "  Onelist Status:         ${GREEN}responding${NC}"
+            else
+                echo -e "  Onelist Status:         ${RED}not responding${NC}"
+            fi
         fi
     else
-        echo -e "  ${DIM}OCTO not configured${NC}"
-        return
-    fi
-
-    # Check PostgreSQL
-    if pg_isready -q 2>/dev/null; then
-        echo -e "  PostgreSQL:             ${GREEN}running${NC}"
-    else
-        echo -e "  PostgreSQL:             ${RED}not running${NC}"
-    fi
-
-    # Check Onelist service
-    if pgrep -f "beam.smp" >/dev/null 2>&1; then
-        echo -e "  Onelist Service:        ${GREEN}running${NC}"
-    elif [ "$METHOD" = "docker" ] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q onelist; then
-        echo -e "  Onelist Container:      ${GREEN}running${NC}"
-    else
-        echo -e "  Onelist Service:        ${RED}not running${NC}"
-    fi
-
-    # Check memory plugin
-    MEMORY_PLUGIN="$OPENCLAW_HOME/plugins/onelist-memory"
-    if [ -d "$MEMORY_PLUGIN" ]; then
-        echo -e "  Memory Plugin:          ${GREEN}installed${NC}"
-    else
-        echo -e "  Memory Plugin:          ${DIM}not installed${NC}"
+        echo -e "  ${DIM}OCTO not configured or jq not available${NC}"
     fi
 
     echo ""
+
+    # Also show detection
+    show_detection
 }
 
-install_docker() {
-    log_step "Installing Onelist via Docker..."
+# Check system resources for Onelist requirements
+check_resources() {
+    local meets_requirements=true
 
-    # Check Docker is available
-    if ! command -v docker &>/dev/null; then
-        log_error "Docker is required for this installation method"
-        echo ""
-        echo "Install Docker from: https://docs.docker.com/get-docker/"
-        return 1
-    fi
-
-    if ! docker info &>/dev/null; then
-        log_error "Docker daemon is not running"
-        return 1
-    fi
-
-    # Check docker-compose
-    if command -v docker-compose &>/dev/null; then
-        COMPOSE_CMD="docker-compose"
-    elif docker compose version &>/dev/null; then
-        COMPOSE_CMD="docker compose"
+    # RAM check (4GB required)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        RAM_GB=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
     else
-        log_error "docker-compose not found"
-        return 1
+        RAM_GB=$(( $(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}') / 1024 / 1024 ))
     fi
+    [ "$RAM_GB" -lt 4 ] && meets_requirements=false
 
-    # Create directory
-    ONELIST_DIR="$HOME/.onelist"
-    mkdir -p "$ONELIST_DIR"
-
-    # Generate docker-compose.yml
-    log_info "Creating docker-compose configuration..."
-
-    cat > "$ONELIST_DIR/docker-compose.yml" << EOF
-version: '3.8'
-
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: onelist-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ${ONELIST_DB}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${PG_PORT}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  onelist:
-    image: trinsiklabs/onelist:latest
-    container_name: onelist
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/${ONELIST_DB}
-      SECRET_KEY_BASE: $(openssl rand -hex 32)
-      PHX_HOST: localhost
-    ports:
-      - "${ONELIST_PORT}:4000"
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-EOF
-
-    log_ok "docker-compose.yml created"
-
-    # Start containers
-    log_info "Starting containers (this may take a few minutes)..."
-
-    cd "$ONELIST_DIR"
-    $COMPOSE_CMD pull
-    $COMPOSE_CMD up -d
-
-    # Wait for services
-    log_info "Waiting for services to start..."
-    sleep 10
-
-    # Verify
-    if curl -s "http://localhost:${ONELIST_PORT}/health" >/dev/null 2>&1; then
-        log_ok "Onelist is running at http://localhost:${ONELIST_PORT}"
+    # CPU check (2 cores required)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        CPU_CORES=$(sysctl -n hw.ncpu)
     else
-        log_warn "Onelist may still be starting..."
-        log_info "Check status with: octo onelist --status"
+        CPU_CORES=$(nproc 2>/dev/null || echo "2")
     fi
+    [ "$CPU_CORES" -lt 2 ] && meets_requirements=false
 
-    return 0
+    # Disk check (10GB required)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        DISK_GB=$(df -g / 2>/dev/null | tail -1 | awk '{print $4}')
+    else
+        DISK_GB=$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G')
+    fi
+    [ "${DISK_GB:-0}" -lt 10 ] && meets_requirements=false
+
+    if [ "$meets_requirements" = true ]; then
+        return 0
+    fi
+    return 1
 }
 
-install_native() {
-    log_step "Installing Onelist natively..."
+# Offer to install onelist-local
+offer_install() {
+    echo ""
+    echo -e "${YELLOW}Onelist is not installed.${NC}"
+    echo ""
+    echo "Would you like to install onelist-local?"
+    echo "This will download and run the installer from:"
+    echo -e "  ${DIM}$ONELIST_LOCAL_INSTALLER${NC}"
+    echo ""
 
-    # Check PostgreSQL
-    if ! command -v psql &>/dev/null; then
-        log_error "PostgreSQL is required for native installation"
+    # Check resources first
+    echo "Checking system requirements..."
+    if check_resources; then
+        log_ok "RAM: ${RAM_GB}GB (4GB required)"
+        log_ok "CPU: ${CPU_CORES} cores (2 required)"
+        log_ok "Disk: ${DISK_GB:-?}GB available (10GB required)"
+    else
+        log_warn "RAM: ${RAM_GB}GB (4GB required)"
+        log_warn "CPU: ${CPU_CORES} cores (2 required)"
+        log_warn "Disk: ${DISK_GB:-?}GB available (10GB required)"
         echo ""
-        echo "Install PostgreSQL 14+ first, then run this command again."
-        return 1
+        log_warn "System may not meet Onelist requirements"
     fi
 
-    if ! pg_isready -q 2>/dev/null; then
-        log_error "PostgreSQL is not running"
-        return 1
+    echo ""
+    read -p "Install onelist-local? [y/N] " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Downloading and running onelist-local installer..."
+        echo ""
+
+        # Download and run installer
+        curl -fsSL "$ONELIST_LOCAL_INSTALLER" | bash
+
+        echo ""
+        echo "After installation completes, run 'octo onelist' again to connect."
+    else
+        echo ""
+        echo "You can install onelist-local manually:"
+        echo "  curl -fsSL $ONELIST_LOCAL_INSTALLER | bash"
+        echo ""
+        echo "Or connect to an existing Onelist instance:"
+        echo "  octo onelist --url=http://your-onelist-host:4000"
     fi
-
-    # Check pgvector extension
-    log_info "Checking pgvector extension..."
-
-    HAS_PGVECTOR=$(sudo -u postgres psql -t -c "SELECT 1 FROM pg_available_extensions WHERE name = 'vector';" 2>/dev/null | tr -d ' ')
-
-    if [ "$HAS_PGVECTOR" != "1" ]; then
-        log_warn "pgvector extension not found"
-        log_info "Attempting to install pgvector..."
-
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            if command -v brew &>/dev/null; then
-                brew install pgvector
-            else
-                log_error "Please install pgvector: brew install pgvector"
-                return 1
-            fi
-        else
-            # Debian/Ubuntu
-            if command -v apt-get &>/dev/null; then
-                sudo apt-get update
-                sudo apt-get install -y postgresql-16-pgvector || sudo apt-get install -y postgresql-15-pgvector || sudo apt-get install -y postgresql-14-pgvector
-            else
-                log_error "Please install pgvector for your system"
-                return 1
-            fi
-        fi
-    fi
-
-    # Create database
-    log_info "Creating database..."
-
-    sudo -u postgres psql << EOF
-CREATE DATABASE ${ONELIST_DB};
-\c ${ONELIST_DB}
-CREATE EXTENSION IF NOT EXISTS vector;
-EOF
-
-    log_ok "Database created with pgvector extension"
-
-    # Download Onelist
-    log_info "Downloading Onelist..."
-
-    ONELIST_DIR="$HOME/.onelist"
-    mkdir -p "$ONELIST_DIR"
-
-    # TODO: Replace with actual Onelist download URL
-    # curl -L "https://github.com/trinsiklabs/onelist/releases/latest/download/onelist-linux-amd64.tar.gz" | tar xz -C "$ONELIST_DIR"
-
-    log_warn "Native installation requires manual Onelist binary download"
-    log_info "Please download from: https://github.com/trinsiklabs/onelist/releases"
-
-    return 0
 }
 
-configure_memory_plugin() {
-    log_step "Configuring OpenClaw memory plugin..."
+# Handle detected but not responding scenario
+handle_detected_not_responding() {
+    echo ""
+    echo -e "${YELLOW}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}  Onelist Detected But Not Responding${NC}"
+    echo -e "${YELLOW}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  Detection method:       $DETECTED_METHOD"
+    echo "  Details:                $DETECTED_INFO"
+    echo "  Detected port:          $DETECTED_PORT"
+    echo "  Checked URL:            $ONELIST_URL"
+    echo ""
+    echo -e "${BOLD}This could mean:${NC}"
+    echo "  1. Onelist is installed but not currently running"
+    echo "  2. Onelist is running on a different port"
+    echo "  3. Onelist is starting up and not ready yet"
+    echo ""
 
-    # Create plugin directory
-    MEMORY_PLUGIN="$OPENCLAW_HOME/plugins/onelist-memory"
-    mkdir -p "$MEMORY_PLUGIN"
-
-    # Create plugin configuration
-    cat > "$MEMORY_PLUGIN/config.json" << EOF
-{
-  "name": "onelist-memory",
-  "version": "1.0.0",
-  "onelistUrl": "http://localhost:${ONELIST_PORT}",
-  "enabled": true,
-  "maxInjections": 3,
-  "searchLimit": 10
-}
-EOF
-
-    log_ok "Memory plugin configured"
-
-    # Update OCTO config
-    if [ -f "$OCTO_HOME/config.json" ]; then
-        local tmp=$(mktemp)
-        jq ".onelist.installed = true | .onelist.method = \"$INSTALL_METHOD\" | .onelist.port = $ONELIST_PORT" "$OCTO_HOME/config.json" > "$tmp"
-        mv "$tmp" "$OCTO_HOME/config.json"
-        log_ok "OCTO configuration updated"
+    if [ ! -t 0 ]; then
+        # Non-interactive mode
+        echo -e "${RED}Error:${NC} Onelist detected but not responding on standard port."
+        echo ""
+        echo "Options:"
+        echo "  - Start Onelist and try again"
+        echo "  - Specify the correct port: octo onelist --port=PORT"
+        echo "  - Skip Onelist: octo onelist --disconnect"
+        exit 1
     fi
+
+    # Interactive mode - give options
+    echo -e "${BOLD}What would you like to do?${NC}"
+    echo ""
+    echo "  1) Enter the correct port"
+    echo "  2) Continue without Onelist support"
+    echo "  3) Try to start Onelist (if you know how)"
+    echo "  4) Cancel"
+    echo ""
+
+    while true; do
+        read -p "  Enter choice [1-4]: " -r choice
+        case $choice in
+            1)
+                echo ""
+                read -p "  Enter Onelist port: " -r custom_port
+                if [ -n "$custom_port" ]; then
+                    ONELIST_PORT="$custom_port"
+                    ONELIST_URL="http://localhost:$custom_port"
+                    echo ""
+                    echo "  Checking http://localhost:$custom_port..."
+                    if check_onelist_health "$ONELIST_URL"; then
+                        log_ok "Onelist responding at $ONELIST_URL"
+                        configure_connection "$ONELIST_URL"
+                        echo ""
+                        echo -e "${GREEN}Connected to Onelist!${NC}"
+                        exit 0
+                    else
+                        log_error "Onelist not responding at port $custom_port"
+                        echo ""
+                    fi
+                fi
+                ;;
+            2)
+                echo ""
+                echo "Continuing without Onelist support."
+                echo "OCTO standalone optimizations will still work."
+                echo ""
+                echo "Run 'octo onelist' anytime to connect to Onelist."
+                exit 0
+                ;;
+            3)
+                echo ""
+                echo "Please start Onelist manually, then run 'octo onelist' again."
+                echo ""
+                echo "Common start commands:"
+                echo "  Docker:  cd ~/.onelist && docker-compose up -d"
+                echo "  Systemd: sudo systemctl start onelist"
+                echo "  Native:  cd /opt/onelist && ./bin/onelist start"
+                exit 0
+                ;;
+            4)
+                echo ""
+                echo "Cancelled."
+                exit 0
+                ;;
+            *)
+                echo "  Please enter 1, 2, 3, or 4"
+                ;;
+        esac
+    done
 }
 
 # Parse arguments
+ACTION=""
+EXPLICIT_URL=false
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --method=*)
-            INSTALL_METHOD="${1#*=}"
+        --url=*)
+            ONELIST_URL="${1#*=}"
+            EXPLICIT_URL=true
             shift
             ;;
-        --method)
-            INSTALL_METHOD="$2"
+        --url)
+            ONELIST_URL="$2"
+            EXPLICIT_URL=true
             shift 2
             ;;
         --port=*)
             ONELIST_PORT="${1#*=}"
+            ONELIST_URL="http://localhost:$ONELIST_PORT"
+            EXPLICIT_URL=true
             shift
             ;;
-        --db=*)
-            ONELIST_DB="${1#*=}"
-            shift
-            ;;
-        --check)
-            check_requirements
-            exit $?
+        --port)
+            ONELIST_PORT="$2"
+            ONELIST_URL="http://localhost:$ONELIST_PORT"
+            EXPLICIT_URL=true
+            shift 2
             ;;
         --status)
-            show_status
-            exit 0
+            ACTION="status"
+            shift
+            ;;
+        --disconnect)
+            ACTION="disconnect"
+            shift
+            ;;
+        --detect)
+            ACTION="detect"
+            shift
             ;;
         -h|--help)
             show_help
@@ -433,104 +618,101 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if already installed
-check_already_installed() {
-    if [ -f "$OCTO_HOME/config.json" ]; then
-        local installed=$(jq -r '.onelist.installed // false' "$OCTO_HOME/config.json" 2>/dev/null)
-        if [ "$installed" = "true" ]; then
-            return 0
-        fi
-    fi
-    return 1
-}
-
-# Main installation flow
-echo ""
-echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}                ${BOLD}Onelist Installation${NC}                             ${CYAN}║${NC}"
-echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════╝${NC}"
-
-# Check if already installed
-if check_already_installed; then
-    echo ""
-    log_ok "Onelist is already installed"
-    show_status
-
-    # In interactive mode, ask if they want to reinstall
-    if [ -t 0 ]; then
-        echo ""
-        echo -n "  Reinstall Onelist? [y/N] "
-        read -r reply
-        if [[ ! "$reply" =~ ^[Yy]$ ]]; then
-            echo ""
-            echo "  Run 'octo onelist --status' to check status"
-            exit 0
-        fi
-        echo ""
-        log_warn "Proceeding with reinstallation..."
-    else
-        # Non-interactive mode - just exit successfully
+# Handle specific actions
+case "$ACTION" in
+    status)
+        show_status
         exit 0
-    fi
-fi
-
-# Check requirements
-check_requirements || exit 1
-
-# Method selection
-if [ -z "$INSTALL_METHOD" ]; then
-    echo ""
-    echo -e "${BOLD}Select installation method:${NC}"
-    echo ""
-    echo "  1) Docker (recommended for most users)"
-    echo "     - Single command, isolated environment"
-    echo "     - Requires Docker Desktop or Docker Engine"
-    echo ""
-    echo "  2) Native (recommended if you have PostgreSQL)"
-    echo "     - Better performance, less overhead"
-    echo "     - Requires PostgreSQL 14+ with pgvector"
-    echo ""
-
-    while true; do
-        echo -n "  Enter choice [1/2]: "
-        read -r choice
-        case $choice in
-            1) INSTALL_METHOD="docker"; break ;;
-            2) INSTALL_METHOD="native"; break ;;
-            *) echo "  Please enter 1 or 2" ;;
-        esac
-    done
-fi
-
-# Run installation
-case "$INSTALL_METHOD" in
-    docker)
-        install_docker
         ;;
-    native)
-        install_native
+    disconnect)
+        disconnect_onelist
+        exit 0
         ;;
-    *)
-        log_error "Unknown installation method: $INSTALL_METHOD"
-        exit 1
+    detect)
+        show_detection
+        exit 0
         ;;
 esac
 
-# Configure plugin
-configure_memory_plugin
+# Main flow
+echo ""
+echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║${NC}                ${BOLD}Onelist Integration${NC}                              ${CYAN}║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
 
-# Summary
+# If explicit URL provided, just check that
+if [ "$EXPLICIT_URL" = true ]; then
+    echo "Checking specified URL: $ONELIST_URL..."
+    echo ""
+    if check_onelist_health "$ONELIST_URL"; then
+        log_ok "Onelist responding at $ONELIST_URL"
+        configure_connection "$ONELIST_URL"
+        echo ""
+        echo -e "${GREEN}Connected to Onelist!${NC}"
+        echo ""
+        echo -e "  ${BOLD}Additional savings:${NC} ${GREEN}50-70%${NC} on top of OCTO optimizations"
+        exit 0
+    else
+        log_error "Onelist not responding at $ONELIST_URL"
+        exit 1
+    fi
+fi
+
+# Run multi-layer detection
+echo "Running Onelist detection..."
 echo ""
-echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  Onelist Installation Complete!${NC}"
-echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
-echo ""
-echo "  Onelist URL:            http://localhost:${ONELIST_PORT}"
-echo "  Memory Plugin:          $OPENCLAW_HOME/plugins/onelist-memory"
-echo ""
-echo -e "  ${BOLD}Additional savings:${NC} ${GREEN}50-70%${NC} on top of OCTO optimizations"
-echo ""
-echo "  Commands:"
-echo "    octo onelist --status     Check Onelist status"
-echo "    octo pg-health            PostgreSQL maintenance"
-echo ""
+
+if run_detection; then
+    # Something was detected
+    log_ok "Onelist detected via $DETECTED_METHOD"
+    log_info "$DETECTED_INFO"
+
+    # Determine URL to check
+    if [ "$DETECTED_PORT" != "unknown" ] && [ -n "$DETECTED_PORT" ]; then
+        ONELIST_URL="http://localhost:$DETECTED_PORT"
+    fi
+
+    echo ""
+    echo "  Checking $ONELIST_URL..."
+
+    if check_onelist_health "$ONELIST_URL"; then
+        log_ok "Onelist responding"
+        echo ""
+        configure_connection "$ONELIST_URL"
+
+        echo ""
+        echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${GREEN}  Connected to Onelist!${NC}"
+        echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo "  Onelist URL:            $ONELIST_URL"
+        echo ""
+        echo -e "  ${BOLD}Additional savings:${NC} ${GREEN}50-70%${NC} on top of OCTO optimizations"
+        echo ""
+        echo "  Commands:"
+        echo "    octo onelist --status     Check connection status"
+        echo "    octo onelist --disconnect Remove connection"
+        echo ""
+    else
+        # Detected but not responding
+        handle_detected_not_responding
+    fi
+else
+    # Nothing detected
+    log_warn "Onelist not detected"
+
+    # Interactive mode - offer to install
+    if [ -t 0 ]; then
+        offer_install
+    else
+        # Non-interactive mode
+        echo ""
+        echo "Install onelist-local:"
+        echo "  curl -fsSL $ONELIST_LOCAL_INSTALLER | bash"
+        echo ""
+        echo "Or specify a URL:"
+        echo "  octo onelist --url=http://your-onelist-host:4000"
+        exit 1
+    fi
+fi
